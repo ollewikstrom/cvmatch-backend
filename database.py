@@ -36,7 +36,7 @@ def init_db():
         database_url = "sqlite:///test.db"  # Test environment uses SQLite
     else:
         print("Using Azure SQL")
-        database_url = os.getenv("AZURE_SQL_CONN_STRING")
+        database_url = os.getenv("DATABASE_PROD_URL")
 
     # Create the SQLAlchemy engine with a connection pool
     engine = create_engine(
