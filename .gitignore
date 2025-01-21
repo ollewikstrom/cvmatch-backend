@@ -1,0 +1,6 @@
+#ignore .venv
+.venv
+venv
+.env
+__pycache__
+instance/
