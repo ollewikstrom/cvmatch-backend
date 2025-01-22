@@ -42,7 +42,6 @@ def get_response(cv_text, job_listing):
                 "content": prompt_string,
             },
         ],
-        max_tokens=1500,
         temperature=0.7,
     )
 
