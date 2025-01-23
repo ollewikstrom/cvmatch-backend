@@ -1,6 +1,6 @@
 import json
-import asyncio
 import os
+import time
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 
@@ -11,42 +11,55 @@ load_dotenv()
 client = AzureOpenAI(
     api_version="2024-08-01-preview",
     azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+    api_key= os.getenv("AZURE_OPENAI_API_KEY"),
 )
 
 def get_response(cv_text, job_listing):
-
-    prompt_string = (
-    f"Given the job listing: '{job_listing}', and this cv \n\n{cv_text}.\n"
-    "Check how well the cv matches the demands of the job listing. If a skill is a perfect match in area and experience, "
-    'provide it with a label of "MATCH". If a skill is not perfectly matched, but is similar to another skill, provide it '
-    'with a label of "PARTIAL". If a skill is not matched, provide it with a label of "MISSING". If it is unclear if a '
-    'skill is present or not, provide it with a label of "UNSURE". \n\n'
-    "You should return a JSON object. The structure of the object should be this: \n"
-    "```{ \n"
-    '    "summary": <a flowing text of no more than 150 words that describes how well the cv matches the job listing>,\n'
-    '    "percentage_match": <your own rating of how compatible the cv is to the prospect>,\n'
-    '    "skills": [\n'
-    '        { "skill": <name of the skill>, "reason": <a short reason of why it matches, or a reason for why another, \n'
-    '        similar skill might be relevant>, "levelOfImportance": <the level of importance the skill has in the job listing, '
-    'for example "MUST HAVE", "SHOULD HAVE" etc>, "matchLabel": <the provided match label>},\n'
-    "    ], \n"
-    "}```"
-)
     # Prompt the model to just generate what is missing and not missing, and then prompt it again to see if any of the missing skills have similar skills that are present
     # Prompt the model again with the response it generated, the cv and job listing, and allow it to make edits to the original response in order for it to be more accurate
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",  # Ensure the model matches your deployment
-        messages=[
-            {
-                "role": "user",
-                "content": prompt_string,
-            },
-        ],
-        temperature=0.7,
+
+    thread = client.beta.threads.create()
+
+    # Add a user question to the thread
+    message = client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=f"""{cv_text} {job_listing}"""
+    )
+    # Run the thread
+    run = client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id='asst_e1vDDOK7W5uebnHm2UVtZ53h'
     )
 
+    response = ''
+
+    # Looping until the run completes or fails
+    while run.status in ['queued', 'in_progress', 'cancelling']:
+        time.sleep(1)
+        run = client.beta.threads.runs.retrieve(
+            thread_id=thread.id,
+            run_id=run.id
+        )
+
+        if run.status == 'completed':
+            messages = client.beta.threads.messages.list(
+                thread_id=thread.id
+        )
+            print("finished processing")
+            for message in messages.data:
+                    if message.role == "assistant":  # Only process assistant messages
+                        for content_block in message.content:
+                            if hasattr(content_block, "text") and hasattr(content_block.text, "value"):
+                                response = content_block.text.value
+        elif run.status == 'requires_action':
+        # the assistant requires calling some functions
+        # and submit the tool outputs back to the run
+            pass
+        else:
+            print(run.status)
     # Extract the response
-    json_response = completion.choices[0].message.content.strip()
+    json_response = response
 
     # Remove ```json from the response
     json_response = json_response.replace("```json", "").replace("```json", "").replace("```", "")

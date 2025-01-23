@@ -14,4 +14,8 @@ def fetch(url):
         "description": description,
         "required_skills": skills
     }
+
+    with open("job_data.json", "w") as f:
+        json.dump(jobData, f)
+
     return jobData

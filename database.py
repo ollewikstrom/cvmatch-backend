@@ -67,7 +67,7 @@ def db_session():
 
 
 # Models
-class ResponseSummary(Base):
+class Match(Base):
     __tablename__ = "response_summaries"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -77,11 +77,23 @@ class ResponseSummary(Base):
     job_listing_name = Column(String(255), nullable=True)
     job_listing_url = Column(String(255), nullable=True)
 
+    match_group_id = Column(String(36), ForeignKey("match_groups.id"), nullable=True)  # Add match group reference
+    match_group = relationship("MatchGroup", back_populates="responses")
+
     # Relationship to Skills
     skills = relationship("Skill", back_populates="response_summary", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<ResponseSummary {self.id}>"
+        return f"<Match {self.id}>"
+
+class MatchGroup(Base):
+    __tablename__ = "match_groups"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    job_listing_url = Column(String(255), nullable=False)
+
+    # Relationship to Match
+    responses = relationship("Match", back_populates="match_group", cascade="all, delete-orphan")
 
 
 class Skill(Base):
@@ -94,8 +106,8 @@ class Skill(Base):
     level_of_importance = Column(String(50), nullable=True)  # e.g., "MUST HAVE", "SHOULD HAVE"
     match_label = Column(String(50), nullable=True)  # e.g., "MATCH", "MISSING", "PARTIAL", "UNSURE"
 
-    # Relationship to ResponseSummary
-    response_summary = relationship("ResponseSummary", back_populates="skills")
+    # Relationship to Match
+    response_summary = relationship("Match", back_populates="skills")
 
     def __repr__(self):
         return f"<Skill {self.id}: {self.skill_name}>"
@@ -135,7 +147,7 @@ def save_openai_response(response_data, cv_name, job_listing_name, job_listing_u
         # Step 1: Save the summary
         step_start_time = perf_counter()
         summary_text = response_data.get("summary", "")
-        response_summary = ResponseSummary(
+        response_summary = Match(
             summary=summary_text,
             cv_name=cv_name,
             job_listing_name=job_listing_name,
@@ -165,7 +177,7 @@ def save_openai_response(response_data, cv_name, job_listing_name, job_listing_u
         step_start_time = perf_counter()
         session.refresh(response_summary)
         step_end_time = perf_counter()
-        print(f"Step 3 (Refresh ResponseSummary): {step_end_time - step_start_time:.4f} seconds")
+        print(f"Step 3 (Refresh Match): {step_end_time - step_start_time:.4f} seconds")
 
         # Total time
         total_end_time = perf_counter()

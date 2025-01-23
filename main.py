@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, Form
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from time import perf_counter  # Import for timing
-from database import ResponseSummary, db_session, init_db, save_openai_response, with_retry
+from database import MatchGroup, Match, db_session, init_db, save_openai_response, with_retry
 from open_ai import get_response
 import scrape_job_two
 import cv_to_json
@@ -31,125 +31,87 @@ class JobListingRequest(BaseModel):
 class MatchIDResponse(BaseModel):
     match_id: str
 
+class MatchGroupResponse(BaseModel):
+    match_group_id: str
+    match_ids: list[str]  # A list of match IDs
+
+
 class MatchResponse(BaseModel):
     match_id: str
     summary: dict
     skills: list
 
 
-@app.post("/process", response_model=MatchIDResponse)
+@app.post("/process", response_model=MatchGroupResponse)
 async def process_cv_and_job(
     job_listing: str = Form(...),
-    cv_file: UploadFile = Form(...),
-    db: Session = Depends(db_session)
+    cv_files: list[UploadFile] = Form(...),
+    db: Session = Depends(db_session),
 ):
-    """
-    Process the CV file and job listing, then get an OpenAI response.
-    """
+    if len(cv_files) > 5:
+        raise HTTPException(status_code=400, detail="You can upload a maximum of 5 files.")
 
-    logger.info(f"Processing request with job listing: {job_listing[:50]} and file: {cv_file.filename}")
+    logger.info(f"Processing {len(cv_files)} CV files for job listing: {job_listing[:50]}")
+
+    processed_job_listing = await asyncio.to_thread(process_job_listing, job_listing)
+
     try:
-        total_start_time = perf_counter()  # Start total timing
+        # Create a new MatchGroup
+        match_group = MatchGroup(job_listing_url=job_listing)
+        db.add(match_group)
+        db.commit()
+        db.refresh(match_group)
 
-        response_data = {}
+        async def process_single_cv(cv_file):
+            cv_data = await process_cv_file(cv_file)
+            open_ai_response = await asyncio.to_thread(
+                get_response, cv_data, processed_job_listing
+            )
 
-        # Step 1: Process job listing
-        step_start_time = perf_counter()
-        if job_listing:
-            response_data["job_listing"] = process_job_listing(job_listing)
-        step_end_time = perf_counter()
-        print(f"Step 1 (Process Job Listing): {step_end_time - step_start_time:.4f} seconds")
+            # Save response as a Match
+            match_id = save_with_retry(
+                open_ai_response,
+                cv_file.filename,
+                job_listing,
+                job_listing,
+            )
 
-        # Step 2: Process CV file
-        step_start_time = perf_counter()
-        if cv_file:
-            response_data["cv_data"] = await process_cv_file(cv_file)
-        step_end_time = perf_counter()
-        print(f"Step 2 (Process CV File): {step_end_time - step_start_time:.4f} seconds")
+            # Link Match to MatchGroup
+            match = db.query(Match).filter_by(id=match_id).first()
+            match.match_group_id = match_group.id
+            db.add(match)
+            return match_id
 
-        # Step 3: Get OpenAI response
-        step_start_time = perf_counter()
-        if "cv_data" in response_data and "job_listing" in response_data:
-            try:
-                open_ai_response = await asyncio.to_thread(
-                    get_response, response_data["cv_data"], response_data["job_listing"]
-                )
-            except Exception as e:
-                logger.error(f"OpenAI request failed: {e}")
-                raise HTTPException(status_code=500, detail="OpenAI request failed")
+        # Process all CV files in parallel
+        match_ids = await asyncio.gather(*[process_single_cv(cv_file) for cv_file in cv_files])
 
-            if open_ai_response:
-                response_data["open_ai_response"] = open_ai_response
-                step_end_time = perf_counter()
-                print(f"Step 3 (Get OpenAI Response): {step_end_time - step_start_time:.4f} seconds")
+        db.commit()  # Commit all changes
 
-                # Step 4: Save OpenAI response
-                step_start_time = perf_counter()
-                response_id = save_with_retry(
-                    response_data["open_ai_response"],
-                    cv_file.filename,
-                    response_data["job_listing"]["name"],
-                    job_listing,
-                )
-                step_end_time = perf_counter()
-                print(f"Step 4 (Save OpenAI Response): {step_end_time - step_start_time:.4f} seconds")
-
-                response_data["match_id"] = response_id
-
-                # Total time taken
-                total_end_time = perf_counter()
-                print(f"Total Time Taken: {total_end_time - total_start_time:.4f} seconds")
-
-                logger.info(f"Successfully processed request. Match ID: {response_id}")
-
-                return {"match_id": response_id}
-            else:
-                logger.error(f"Error processing request: {e}")
-                raise HTTPException(status_code=500, detail="Error processing the CV and job listing")
-        else:
-            logger.error(f"Error processing request: {e}")
-            raise HTTPException(status_code=400, detail="Missing CV or Job Listing data")
+        return {"match_group_id": match_group.id, "match_ids": match_ids}
 
     except Exception as e:
-        # Log the error
-        print(f"Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while processing your request.")
+        logger.error(f"Error processing files: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Error processing the files.")
 
 
-@app.get("/match/{match_id}", response_model=MatchResponse)
-async def get_match(match_id: str, db: Session = Depends(db_session)):
-    """
-    Fetch and return the match details by match ID.
-    """
-    step_start_time = perf_counter()
-    response_summary = db.query(ResponseSummary).options(joinedload(ResponseSummary.skills)).filter_by(id=match_id).first()
-    if not response_summary:
-        step_end_time = perf_counter()
-        print(f"Step (Fetch Match Details - Not Found): {step_end_time - step_start_time:.4f} seconds")
-        raise HTTPException(status_code=404, detail=f"No match found with ID {match_id}")
-
-    step_end_time = perf_counter()
-    print(f"Step (Fetch Match Details): {step_end_time - step_start_time:.4f} seconds")
+@app.get("/match_group/{match_group_id}")
+async def get_match_group(match_group_id: str, db: Session = Depends(db_session)):
+    match_group = db.query(MatchGroup).filter_by(id=match_group_id).first()
+    if not match_group:
+        raise HTTPException(status_code=404, detail=f"No match group found with ID {match_group_id}")
 
     return {
-        "match_id": match_id,
-        "summary": {
-            "id": response_summary.id,
-            "summary": response_summary.summary,
-            "cv_name": response_summary.cv_name,
-            "job_listing_name": response_summary.job_listing_name,
-            "job_listing_url": response_summary.job_listing_url,
-            "created_at": response_summary.created_at,
-        },
-        "skills": [
+        "match_group_id": match_group.id,
+        "job_listing_url": match_group.job_listing_url,
+        "matches": [
             {
-                "id": skill.id,
-                "skill_name": skill.skill_name,
-                "reason": skill.reason,
-                "level_of_importance": skill.level_of_importance,
-                "match_label": skill.match_label,
+                "match_id": response.id,
+                "cv_name": response.cv_name,
+                "summary": response.summary,
+                "skills": response.skills,  # Include skills in the response
             }
-            for skill in response_summary.skills
+            for response in match_group.responses
         ],
     }
 
