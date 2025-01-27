@@ -105,12 +105,13 @@ class Skill(Base):
     reason = Column(Text, nullable=True)
     level_of_importance = Column(String(50), nullable=True)  # e.g., "MUST HAVE", "SHOULD HAVE"
     match_label = Column(String(50), nullable=True)  # e.g., "MATCH", "MISSING", "PARTIAL", "UNSURE"
+    order_index = Column(Integer, nullable=False)
 
     # Relationship to Match
     response_summary = relationship("Match", back_populates="skills")
 
     def __repr__(self):
-        return f"<Skill {self.id}: {self.skill_name}>"
+        return f"<Skill {self.id}: {self.skill_name} (Order: {self.order_index})>"
 
 
 # Retry decorator for database operations
@@ -158,15 +159,16 @@ def save_openai_response(response_data, cv_name, job_listing_name, job_listing_u
         step_end_time = perf_counter()
         print(f"Step 1 (Save Summary): {step_end_time - step_start_time:.4f} seconds")
 
-        # Step 2: Save the skills
+        # Step 2: Save the skills with order_index
         step_start_time = perf_counter()
-        for skill_data in response_data.get("skills", []):
+        for index, skill_data in enumerate(response_data.get("skills", [])):
             skill = Skill(
                 response_summary_id=response_summary.id,
                 skill_name=skill_data.get("skill"),
                 reason=skill_data.get("reason"),
                 level_of_importance=skill_data.get("levelOfImportance"),
                 match_label=skill_data.get("matchLabel"),
+                order_index=index,  # Store the index of the skill
             )
             session.add(skill)
         session.commit()
@@ -190,3 +192,4 @@ def save_openai_response(response_data, cv_name, job_listing_name, job_listing_u
         raise
     finally:
         session.close()
+
