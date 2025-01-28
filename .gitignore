@@ -5,3 +5,4 @@ venv
 __pycache__
 instance/
 *.db
+open_ai_data*.json
