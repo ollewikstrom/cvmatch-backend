@@ -7,7 +7,14 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, Form
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from time import perf_counter  # Import for timing
-from database import MatchGroup, Match, db_session, init_db, save_openai_response, with_retry
+from database import (
+    MatchGroup,
+    Match,
+    db_session,
+    init_db,
+    save_openai_response,
+    with_retry,
+)
 from open_ai import get_response
 import scrape_job_two
 import cv_to_json
@@ -16,6 +23,7 @@ import cv_to_json
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
+print("Logging level set to INFO")
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
@@ -24,12 +32,15 @@ app = FastAPI()
 # Initialize the database
 init_db()
 
+
 # Pydantic models for request and response validation
 class JobListingRequest(BaseModel):
     job_listing: str
 
+
 class MatchIDResponse(BaseModel):
     match_id: str
+
 
 class MatchGroupResponse(BaseModel):
     match_group_id: str
@@ -49,9 +60,13 @@ async def process_cv_and_job(
     db: Session = Depends(db_session),
 ):
     if len(cv_files) > 5:
-        raise HTTPException(status_code=400, detail="You can upload a maximum of 5 files.")
+        raise HTTPException(
+            status_code=400, detail="You can upload a maximum of 5 files."
+        )
 
-    logger.info(f"Processing {len(cv_files)} CV files for job listing: {job_listing[:50]}")
+    logger.info(
+        f"Processing {len(cv_files)} CV files for job listing: {job_listing[:50]}"
+    )
 
     # Track overall execution time
     overall_start_time = perf_counter()
@@ -59,7 +74,9 @@ async def process_cv_and_job(
     # Time tracking: Job listing processing
     job_start_time = perf_counter()
     processed_job_listing = await asyncio.to_thread(scrape_job_two.fetch, job_listing)
-    logger.info(f"Job listing processed in {perf_counter() - job_start_time:.2f} seconds.")
+    logger.info(
+        f"Job listing processed in {perf_counter() - job_start_time:.2f} seconds."
+    )
 
     try:
         # Create a new MatchGroup
@@ -71,13 +88,17 @@ async def process_cv_and_job(
         async def process_single_cv(cv_file):
             cv_start_time = perf_counter()
             cv_data = await process_cv_file(cv_file)
-            logger.info(f"CV {cv_file.filename} processed in {perf_counter() - cv_start_time:.2f} seconds.")
+            logger.info(
+                f"CV {cv_file.filename} processed in {perf_counter() - cv_start_time:.2f} seconds."
+            )
 
             ai_start_time = perf_counter()
             open_ai_response = await asyncio.to_thread(
                 get_response, cv_data, processed_job_listing
             )
-            logger.info(f"AI response for {cv_file.filename} generated in {perf_counter() - ai_start_time:.2f} seconds.")
+            logger.info(
+                f"AI response for {cv_file.filename} generated in {perf_counter() - ai_start_time:.2f} seconds."
+            )
 
             # Save response as a Match
             match_id = save_with_retry(
@@ -94,11 +115,15 @@ async def process_cv_and_job(
             return match_id
 
         # Process all CV files in parallel
-        match_ids = await asyncio.gather(*[process_single_cv(cv_file) for cv_file in cv_files])
+        match_ids = await asyncio.gather(
+            *[process_single_cv(cv_file) for cv_file in cv_files]
+        )
 
         db.commit()  # Commit all changes
 
-        logger.info(f"Overall processing completed in {perf_counter() - overall_start_time:.2f} seconds.")
+        logger.info(
+            f"Overall processing completed in {perf_counter() - overall_start_time:.2f} seconds."
+        )
 
         return {"match_group_id": match_group.id, "match_ids": match_ids}
 
@@ -116,7 +141,9 @@ async def get_match_group(match_group_id: str, db: Session = Depends(db_session)
     # Query the MatchGroup by ID
     match_group = db.query(MatchGroup).filter_by(id=match_group_id).first()
     if not match_group:
-        raise HTTPException(status_code=404, detail=f"No match group found with ID {match_group_id}")
+        raise HTTPException(
+            status_code=404, detail=f"No match group found with ID {match_group_id}"
+        )
 
     # Build the response
     return {
@@ -146,7 +173,6 @@ async def get_match_group(match_group_id: str, db: Session = Depends(db_session)
     }
 
 
-
 # Helper function to process CV file
 async def process_cv_file(cv_file: UploadFile):
     try:
@@ -160,7 +186,9 @@ async def process_cv_file(cv_file: UploadFile):
 # Save OpenAI response with retry logic
 @with_retry(retries=3, delay=5)
 def save_with_retry(response_data, cv_name, job_listing_name, job_listing_url):
-    return save_openai_response(response_data, cv_name, job_listing_name, job_listing_url)
+    return save_openai_response(
+        response_data, cv_name, job_listing_name, job_listing_url
+    )
 
 
 if __name__ == "__main__":

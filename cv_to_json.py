@@ -3,6 +3,7 @@ from datetime import datetime
 from docx import Document
 import json
 
+
 def detect_applicant_name(document):
     """
     Extracts the applicant's first and last name from Table 1, Row 2.
@@ -74,19 +75,15 @@ def replace_prohibited_terms(json_data, prohibited_terms):
     fields_to_check = ["description", "applied_skills", "customer"]  # Fields to clean
     for key in fields_to_check:
         value = json_data.get(key, "")
-        
+
         if isinstance(value, str):  # For string fields
             value = re.sub(pattern, "[REDACTED]", value)
             json_data[key] = value
 
         elif isinstance(value, list):  # For list fields (e.g., skills)
-            json_data[key] = [
-                re.sub(pattern, "[REDACTED]", item) for item in value
-            ]
+            json_data[key] = [re.sub(pattern, "[REDACTED]", item) for item in value]
 
     return json_data
-
-
 
 
 def convert_to_json(input_text, prohibited_terms):
@@ -121,7 +118,11 @@ def convert_to_json(input_text, prohibited_terms):
         date_end = ""
 
     # Extract description
-    description_match = re.search(r"(Beskrivning|Description)\s*(.+?)(?=\nExpertis|Expertise|\Z)", input_text, re.DOTALL)
+    description_match = re.search(
+        r"(Beskrivning|Description)\s*(.+?)(?=\nExpertis|Expertise|\Z)",
+        input_text,
+        re.DOTALL,
+    )
     description = description_match.group(2).strip() if description_match else ""
 
     # Extract expertise/skills
@@ -145,7 +146,7 @@ def convert_to_json(input_text, prohibited_terms):
 
 def parse_skills(skill_string):
     """Parse the skills line into a list of skills."""
-    return [skill.strip() for skill in skill_string.split('|') if skill.strip()]
+    return [skill.strip() for skill in skill_string.split("|") if skill.strip()]
 
 
 def find_line_with_pipe(input_string):
@@ -154,6 +155,7 @@ def find_line_with_pipe(input_string):
         if "|" in line:
             return line.strip()
     return ""
+
 
 def extract_section_by_heading_and_tables(document, heading):
     """Extracts content under a specific heading from both paragraphs and tables."""
@@ -178,11 +180,14 @@ def extract_section_by_heading_and_tables(document, heading):
                 capture = True
                 continue
             if capture:
-                if row_text.lower().startswith("summary") or row_text.lower().startswith("education"):
+                if row_text.lower().startswith(
+                    "summary"
+                ) or row_text.lower().startswith("education"):
                     break  # Stop capturing if another section starts
                 content.append(row_text)
 
     return "\n".join(content)
+
 
 def extract_sections_from_tables(document):
     """Extract sections from tables that contain rows starting with 'Roll'."""
@@ -192,10 +197,13 @@ def extract_sections_from_tables(document):
     capture = False
 
     for table in document.tables:
-        for row in table.rows:            # Extract unique content from cells
-            cells = list(dict.fromkeys([cell.text.strip() for cell in row.cells if cell.text.strip()]))
+        for row in table.rows:  # Extract unique content from cells
+            cells = list(
+                dict.fromkeys(
+                    [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                )
+            )
             row_text = " | ".join(cells).strip()
-
 
             # Skip empty rows or rows already processed
             if not row_text or row_text in seen_rows:
@@ -204,7 +212,7 @@ def extract_sections_from_tables(document):
 
             # Check for the start of a new section
             if re.match(r"^(Roll|Role):", row_text):
-               
+
                 if current_section:  # Save the previous section
                     sections.append("\n".join(current_section))
                 current_section = [row_text]
@@ -245,12 +253,11 @@ def parse_docx_to_json(cv_file, filename):
         parsed_json = convert_to_json(section, prohibited_terms)
         if parsed_json:  # Only include non-filtered sections
             all_assignments.append(parsed_json)
-    output_json = {"title": filename, "introduction": summary, "education": education, "assignments": all_assignments}
-
-    with open("output.json", "w") as f:
-        json.dump(output_json, f, indent=2)
-    
+    output_json = {
+        "title": filename,
+        "introduction": summary,
+        "education": education,
+        "assignments": all_assignments,
+    }
 
     return output_json
-
-
