@@ -247,6 +247,10 @@ def parse_docx_to_json(cv_file, filename):
             all_assignments.append(parsed_json)
     output_json = {"title": filename, "introduction": summary, "education": education, "assignments": all_assignments}
 
+    with open("output.json", "w") as f:
+        json.dump(output_json, f, indent=2)
+    
+
     return output_json
 
 
