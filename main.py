@@ -2,10 +2,12 @@ import io
 import asyncio
 import os
 import logging
+import sys
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, Form
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from uvicorn.config import LOGGING_CONFIG
 from time import perf_counter  # Import for timing
 from database import (
     MatchGroup,
@@ -22,10 +24,18 @@ import cv_to_json
 # Load the environment variables
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
-print("Logging level set to INFO")
-logger = logging.getLogger(__name__)
+# Apply Uvicorn's logging configuration to all logs
+logging.config.dictConfig(LOGGING_CONFIG)
 
+# Ensure logging goes to stdout explicitly
+for handler in logging.getLogger().handlers:
+    handler.stream = sys.stdout  # Redirect logs to stdout
+
+logger = logging.getLogger("uvicorn")  # Use Uvicorn's logger instead of __name__
+
+logger.info("Logging is set up correctly!")
+logger.info("✅ This should appear in Azure Log Stream!")
+logger.error("❌ This is an error message!")
 # Initialize FastAPI
 app = FastAPI()
 
