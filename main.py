@@ -89,6 +89,7 @@ async def process_cv_and_job(
     )
 
     try:
+        logger.info("Processing CV files with job listing: " + job_listing)
         # Create a new MatchGroup
         match_group = MatchGroup(job_listing_url=job_listing)
         db.add(match_group)

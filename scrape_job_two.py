@@ -1,5 +1,5 @@
-import json
 import requests
+import open_ai
 
 
 def fetch(url):
@@ -14,5 +14,5 @@ def fetch(url):
         json_res["skills"],
     )
     jobData = {"name": name, "description": description, "required_skills": skills}
-
-    return jobData
+    processed_job_listing = open_ai.summarize_skills_in_job_listing(jobData)
+    return processed_job_listing
