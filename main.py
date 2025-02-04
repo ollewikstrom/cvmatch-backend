@@ -7,8 +7,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, Form
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from uvicorn.config import LOGGING_CONFIG
-from time import perf_counter  # Import for timing
+from time import perf_counter
+
+import uvicorn  # Import for timing
 from database import (
     MatchGroup,
     Match,
@@ -24,18 +25,19 @@ import cv_to_json
 # Load the environment variables
 load_dotenv()
 
-# Apply Uvicorn's logging configuration to all logs
-logging.config.dictConfig(LOGGING_CONFIG)
+# Set up logging to always flush immediately
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True,  # Ensures all previous logging configurations are overridden
+)
 
-# Ensure logging goes to stdout explicitly
-for handler in logging.getLogger().handlers:
-    handler.stream = sys.stdout  # Redirect logs to stdout
+# Ensure logs are written immediately
+sys.stdout.reconfigure(line_buffering=True)
 
-logger = logging.getLogger("uvicorn")  # Use Uvicorn's logger instead of __name__
-
-logger.info("Logging is set up correctly!")
-logger.info("✅ This should appear in Azure Log Stream!")
-logger.error("❌ This is an error message!")
+logger = logging.getLogger(__name__)
+logger.info("✅ Logging setup is now properly configured!")
 # Initialize FastAPI
 app = FastAPI()
 
@@ -203,7 +205,6 @@ def save_with_retry(response_data, cv_name, job_listing_name, job_listing_url):
 
 
 if __name__ == "__main__":
-    import uvicorn
-
-    # Run the app with Uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    config = uvicorn.Config("main:app", port=5000, log_level="info", workers=4)
+    server = uvicorn.Server(config)
+    server.run()

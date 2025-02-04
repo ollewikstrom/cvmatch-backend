@@ -68,7 +68,6 @@ def get_response(cv_text, job_listing):
     except json.JSONDecodeError:
         # If the JSON is invalid, return nothing
         return
-
     return json_object
 
 
@@ -124,5 +123,11 @@ def summarize_skills_in_job_listing(job_listing):
     except json.JSONDecodeError:
         # If the JSON is invalid, return nothing
         return
+
+    print("Skills required: ", json_object)
+
+    # Outout the json object to a file
+    with open("jobskills.json", "w") as f:
+        json.dump(json_object, f)
 
     return json_object
