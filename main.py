@@ -1,8 +1,10 @@
 import io
 import asyncio
-import os
+
 import logging
-import sys
+
+from azure.monitor.opentelemetry import configure_azure_monitor
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, Form
 from pydantic import BaseModel
@@ -25,19 +27,12 @@ import cv_to_json
 # Load the environment variables
 load_dotenv()
 
-# Set up logging to always flush immediately
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-    force=True,  # Ensures all previous logging configurations are overridden
-)
+# Configure Azure Monitor with a custom logger namespace
+configure_azure_monitor(logger_name="my_app.monitoring")
 
-# Ensure logs are written immediately
-sys.stdout.reconfigure(line_buffering=True)
-
-logger = logging.getLogger(__name__)
-logger.info("✅ Logging setup is now properly configured!")
+# Set up logger
+logger = logging.getLogger("my_app.monitoring")
+logger.setLevel(logging.INFO)
 # Initialize FastAPI
 app = FastAPI()
 
